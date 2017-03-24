@@ -146,7 +146,7 @@
 	state = ready :: ready | {fetch, lcs | bin, [field()]},
 	stmts = [] :: [{any(), non_neg_integer()}],
 
-	recv_timeout = 5000 :: timeout(),
+	recv_timeout = 15000 :: timeout(),
 	max_packet_size = 100000 :: non_neg_integer()
 }).
 -opaque state() :: #mysql_client{}.
@@ -235,17 +235,21 @@ ping(State) ->
 -spec prepare(any(), string(), State)
 	-> {ok, State} | remote_error() when State::state().
 prepare(Stmt, Query, State=#mysql_client{state=ready, stmts=StmtsList}) ->
-	{ok, State2} = send_prepare(Query, new_query(State)),
-	{ok, ResPacket, State3} = recv(State2),
-	case handle_prepare_result(ResPacket) of
-		{ok, StmtHandler, FieldCount, ParamCount, _Warnings} ->
-			%% We don't need this.
-			{fields, _, State4} = handle_fields(ParamCount, State3),
-			{fields, _, State5} = handle_fields(FieldCount, State4),
-			{ok, State5#mysql_client{
-				stmts=[{Stmt, StmtHandler}|StmtsList]}};
-		Res ->
-			Res
+	case lists:keymember(Stmt, 1, StmtsList) of
+	    false ->
+		{ok, State2} = send_prepare(Query, new_query(State)),
+		{ok, ResPacket, State3} = recv(State2),
+		case handle_prepare_result(ResPacket) of
+			{ok, StmtHandler, FieldCount, ParamCount, _Warnings} ->
+				%% We don't need this.
+				{fields, _, State4} = handle_fields(ParamCount, State3),
+				{fields, _, State5} = handle_fields(FieldCount, State4),
+				{ok, State5#mysql_client{
+					stmts= lists:keystore(Stmt, 1, StmtsList, {Stmt, StmtHandler}) }};
+			Res ->
+				Res
+		end;
+	   true -> {ok, State}
 	end.
 
 %% @doc Delete a prepared statement.
@@ -366,9 +370,9 @@ mysql_to_erlang_type(?MYSQL_TYPE_DATETIME) -> timestamp;
 mysql_to_erlang_type(?MYSQL_TYPE_NEWDECIMAL) -> decimal;
 %mysql_to_erlang_type(?MYSQL_TYPE_ENUM) -> integer;
 %mysql_to_erlang_type(?MYSQL_TYPE_SET) -> integer;
-%mysql_to_erlang_type(?MYSQL_TYPE_TINY_BLOB) -> binary;
-%mysql_to_erlang_type(?MYSQL_TYPE_MEDIUM_BLOB) -> binary;
-%mysql_to_erlang_type(?MYSQL_TYPE_LONG_BLOB) -> binary;
+mysql_to_erlang_type(?MYSQL_TYPE_TINY_BLOB) -> binary;
+mysql_to_erlang_type(?MYSQL_TYPE_MEDIUM_BLOB) -> binary;
+mysql_to_erlang_type(?MYSQL_TYPE_LONG_BLOB) -> binary;
 mysql_to_erlang_type(?MYSQL_TYPE_BLOB) -> binary;
 mysql_to_erlang_type(?MYSQL_TYPE_VAR_STRING) -> binary;
 mysql_to_erlang_type(?MYSQL_TYPE_STRING) -> binary.
